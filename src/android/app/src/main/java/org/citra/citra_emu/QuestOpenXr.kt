@@ -7,10 +7,8 @@ import android.content.Context
 import android.app.Activity
 
 /**
- * Small Android-side entry point for the Khronos OpenXR loader.
- *
- * This initializes the loader only. An OpenXR instance/session, swapchains,
- * frame loop, tracking and stereo presentation are implemented separately.
+ * Android lifecycle and pose bridge for the native Quest OpenXR implementation.
+ * Native code owns the OpenXR instance/session, GL swapchain, and composition layer.
  */
 object QuestOpenXr {
     private const val XR_SUCCESS = 0
