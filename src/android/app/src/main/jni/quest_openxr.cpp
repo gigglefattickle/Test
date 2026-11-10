@@ -28,6 +28,7 @@ XrSession g_session{XR_NULL_HANDLE};
 XrSpace g_local_space{XR_NULL_HANDLE};
 XrSpace g_view_space{XR_NULL_HANDLE};
 bool g_session_running{};
+XrSessionState g_session_state{XR_SESSION_STATE_UNKNOWN};
 bool g_frame_begun{};
 QuestHeadPose g_latest_pose{};
 XrTime g_display_time{};
@@ -66,6 +67,7 @@ void DestroySessionLocked() {
     g_view_space = XR_NULL_HANDLE;
     g_local_space = XR_NULL_HANDLE;
     g_session = XR_NULL_HANDLE;
+    g_session_state = XR_SESSION_STATE_UNKNOWN;
     g_instance = XR_NULL_HANDLE;
     g_system = XR_NULL_SYSTEM_ID;
 }
@@ -80,6 +82,7 @@ void PollEventsLocked() {
                 event = {XR_TYPE_EVENT_DATA_BUFFER};
                 continue;
             }
+            g_session_state = changed->state;
             if (changed->state == XR_SESSION_STATE_READY && g_resumed && !g_session_running) {
                 XrSessionBeginInfo begin_info{XR_TYPE_SESSION_BEGIN_INFO};
                 begin_info.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
@@ -96,6 +99,16 @@ void PollEventsLocked() {
             }
         }
         event = {XR_TYPE_EVENT_DATA_BUFFER};
+    }
+    // READY may arrive while Android is paused. Start the session once the activity resumes.
+    if (g_session_state == XR_SESSION_STATE_READY && g_resumed && !g_session_running &&
+        g_session != XR_NULL_HANDLE) {
+        XrSessionBeginInfo begin_info{XR_TYPE_SESSION_BEGIN_INFO};
+        begin_info.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+        if (XR_SUCCEEDED(xrBeginSession(g_session, &begin_info))) {
+            g_session_running = true;
+            Log("OpenXR session started");
+        }
     }
 }
 } // namespace
@@ -232,7 +245,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
     g_latest_pose = {};
     if (g_session == XR_NULL_HANDLE) return false;
     PollEventsLocked();
-    if (!g_session_running) return false;
+    if (!g_resumed || !g_session_running) return false;
 
     XrFrameWaitInfo wait_info{XR_TYPE_FRAME_WAIT_INFO};
     XrFrameState frame_state{XR_TYPE_FRAME_STATE};
