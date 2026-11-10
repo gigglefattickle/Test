@@ -12,6 +12,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -69,6 +71,80 @@ class EmulationActivity : AppCompatActivity() {
     private lateinit var binding: ActivityEmulationBinding
     private lateinit var screenAdjustmentUtil: ScreenAdjustmentUtil
     private lateinit var gamepadEventHandler: GamepadEventHandler
+
+    private val questInputHandler = Handler(Looper.getMainLooper())
+    private val questPressedButtons = arrayOf(mutableSetOf<Int>(), mutableSetOf<Int>())
+    private val questControllerPoll = object : Runnable {
+        override fun run() {
+            pollQuestControllers()
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                questInputHandler.postDelayed(this, 16L)
+            }
+        }
+    }
+
+    private fun pollQuestControllers() {
+        if (!NativeLibrary.isRunning()) return
+        val states = QuestOpenXr.controllerStates()
+        if (states.size < 42) return
+        val buttonMaps = arrayOf(
+            listOf(
+                1 to NativeLibrary.ButtonType.BUTTON_X,
+                2 to NativeLibrary.ButtonType.BUTTON_Y,
+                4 to NativeLibrary.ButtonType.TRIGGER_L,
+                8 to NativeLibrary.ButtonType.BUTTON_ZL,
+                16 to NativeLibrary.ButtonType.STICK_LEFT,
+                32 to NativeLibrary.ButtonType.BUTTON_SELECT
+            ),
+            listOf(
+                1 to NativeLibrary.ButtonType.BUTTON_A,
+                2 to NativeLibrary.ButtonType.BUTTON_B,
+                4 to NativeLibrary.ButtonType.TRIGGER_R,
+                8 to NativeLibrary.ButtonType.BUTTON_ZR,
+                16 to NativeLibrary.ButtonType.STICK_C
+            )
+        )
+        for (hand in 0..1) {
+            val offset = hand * 21
+            val descriptor = if (hand == 0) "quest-left-controller" else "quest-right-controller"
+            val mask = states[offset + 14].toInt()
+            val previous = questPressedButtons[hand]
+            val current = buttonMaps[hand].filter { (bit, _) -> mask and bit != 0 }
+                .map { it.second }.toSet()
+            (current - previous).forEach {
+                NativeLibrary.onGamePadEvent(descriptor, it, NativeLibrary.ButtonState.PRESSED)
+            }
+            (previous - current).forEach {
+                NativeLibrary.onGamePadEvent(descriptor, it, NativeLibrary.ButtonState.RELEASED)
+            }
+            previous.clear()
+            previous.addAll(current)
+            val stickX = states[offset + 17].coerceIn(-1f, 1f)
+            val stickY = states[offset + 18].coerceIn(-1f, 1f)
+            NativeLibrary.onGamePadMoveEvent(
+                descriptor,
+                if (hand == 0) NativeLibrary.ButtonType.STICK_LEFT else NativeLibrary.ButtonType.STICK_C,
+                stickX,
+                stickY
+            )
+        }
+    }
+
+    private fun releaseQuestControllerInput() {
+        for (hand in 0..1) {
+            val descriptor = if (hand == 0) "quest-left-controller" else "quest-right-controller"
+            questPressedButtons[hand].forEach {
+                NativeLibrary.onGamePadEvent(descriptor, it, NativeLibrary.ButtonState.RELEASED)
+            }
+            questPressedButtons[hand].clear()
+            NativeLibrary.onGamePadMoveEvent(
+                descriptor,
+                if (hand == 0) NativeLibrary.ButtonType.STICK_LEFT else NativeLibrary.ButtonType.STICK_C,
+                0f,
+                0f
+            )
+        }
+    }
     lateinit var secondaryDisplayManager: SecondaryDisplay
 
     private val onShutdown = Runnable {
@@ -287,6 +363,8 @@ class EmulationActivity : AppCompatActivity() {
             }
         }
         super.onResume()
+        questInputHandler.removeCallbacks(questControllerPoll)
+        questInputHandler.post(questControllerPoll)
     }
 
     override fun onStop() {
@@ -295,6 +373,8 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        questInputHandler.removeCallbacks(questControllerPoll)
+        releaseQuestControllerInput()
         QuestOpenXr.setResumed(false)
         gamepadEventHandler.reset()
         super.onPause()
