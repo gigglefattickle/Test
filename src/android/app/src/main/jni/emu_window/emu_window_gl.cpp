@@ -16,6 +16,7 @@
 #include "core/core.h"
 #include "input_common/main.h"
 #include "jni/emu_window/emu_window_gl.h"
+#include "jni/quest_openxr.h"
 #include "video_core/gpu.h"
 #include "video_core/renderer_base.h"
 
@@ -169,7 +170,9 @@ void EmuWindow_Android_OpenGL::DestroyContext() {
     if (!egl_context) {
         return;
     }
-    if (eglGetCurrentContext() == egl_context) {
+    if (egl_context != EGL_NO_CONTEXT && egl_display != EGL_NO_DISPLAY) {
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+        QuestOpenXR::Shutdown();
         eglMakeCurrent(egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     }
     if (!eglDestroyContext(egl_display, egl_context)) {
@@ -241,8 +244,16 @@ void EmuWindow_Android_OpenGL::TryPresenting() {
     }
     eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
     surface_current = true;
+    if (!is_secondary) {
+        QuestOpenXR::EnsureSession(egl_display, egl_config, egl_context);
+        QuestHeadPose head_pose{};
+        QuestOpenXR::BeginFrameAndLocate(head_pose);
+    }
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     eglSwapInterval(egl_display, Settings::values.use_vsync ? 1 : 0);
     system.GPU().Renderer().TryPresent(0, is_secondary);
     eglSwapBuffers(egl_display, egl_surface);
+    if (!is_secondary) {
+        QuestOpenXR::EndFrame();
+    }
 }
