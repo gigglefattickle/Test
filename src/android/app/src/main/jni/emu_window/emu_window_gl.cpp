@@ -19,6 +19,7 @@
 #include "jni/quest_openxr.h"
 #include "video_core/gpu.h"
 #include "video_core/renderer_base.h"
+#include "video_core/renderer_opengl/renderer_opengl.h"
 
 static constexpr std::array<EGLint, 15> egl_attribs{EGL_SURFACE_TYPE,
                                                     EGL_WINDOW_BIT,
@@ -259,7 +260,16 @@ void EmuWindow_Android_OpenGL::TryPresenting() {
     eglSwapInterval(egl_display, Settings::values.use_vsync ? 1 : 0);
     system.GPU().Renderer().TryPresent(0, is_secondary);
     if (!is_secondary) {
-        QuestOpenXR::PresentFrame(window_width, window_height);
+        GLuint left_eye_texture{};
+        GLuint right_eye_texture{};
+        u32 eye_width{};
+        u32 eye_height{};
+        auto* renderer = dynamic_cast<OpenGL::RendererOpenGL*>(&system.GPU().Renderer());
+        if (renderer && renderer->GetQuestStereoTextures(
+                            left_eye_texture, right_eye_texture, eye_width, eye_height)) {
+            QuestOpenXR::PresentStereoFrame(left_eye_texture, right_eye_texture,
+                                             eye_width, eye_height);
+        }
     }
     eglSwapBuffers(egl_display, egl_surface);
     if (!is_secondary) {
