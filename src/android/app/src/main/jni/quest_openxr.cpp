@@ -33,6 +33,7 @@ XrInstance g_instance{XR_NULL_HANDLE};
 XrSystemId g_system{XR_NULL_SYSTEM_ID};
 XrSession g_session{XR_NULL_HANDLE};
 XrSpace g_local_space{XR_NULL_HANDLE};
+float g_panel_center_y{1.25f};
 XrSpace g_view_space{XR_NULL_HANDLE};
 bool g_session_running{};
 XrSessionState g_session_state{XR_SESSION_STATE_UNKNOWN};
@@ -293,7 +294,7 @@ XrVector3f RotateVector(const XrQuaternionf& q, const XrVector3f& v) {
 }
 
 PanelRect ComputeWorldPanelRect(const XrPosef& eye_pose, const XrFovf& fov) {
-    constexpr float center_y = 1.25f;
+    const float center_y = g_panel_center_y;
     constexpr float half_width = 0.8f;
     constexpr float half_height = 0.48f;
     constexpr float panel_z = -2.5f;
@@ -352,7 +353,7 @@ void DrawQuestLaserPointers(const PanelRect& panel, uint32_t eye) {
 
         // The New Leaf/3DS image is presented on a 5:3 world-anchored virtual panel.
         constexpr float panel_z = -2.5f;
-        constexpr float panel_center_y = 1.25f;
+        const float panel_center_y = g_panel_center_y;
         constexpr float panel_width = 1.6f;
         constexpr float panel_height = 0.96f;
         const float distance = (panel_z - state.aim_position[2]) / dz;
@@ -649,12 +650,20 @@ bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context) {
     }
 
     XrReferenceSpaceCreateInfo local_info{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
-    local_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    local_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
     local_info.poseInReferenceSpace.orientation.w = 1.0f;
-    if (XR_FAILED(xrCreateReferenceSpace(g_session, &local_info, &g_local_space))) {
-        Log("Failed to create LOCAL reference space");
-        DestroySessionLocked();
-        return false;
+    if (XR_SUCCEEDED(xrCreateReferenceSpace(g_session, &local_info, &g_local_space))) {
+        g_panel_center_y = 1.25f; // Stage space is floor-relative.
+        Log("Using floor-relative STAGE space for room-scale presentation");
+    } else {
+        local_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+        if (XR_FAILED(xrCreateReferenceSpace(g_session, &local_info, &g_local_space))) {
+            Log("Failed to create STAGE or LOCAL reference space");
+            DestroySessionLocked();
+            return false;
+        }
+        g_panel_center_y = 0.0f; // LOCAL space is viewer-origin-relative.
+        Log("STAGE space unavailable; using LOCAL viewer-origin space");
     }
     XrReferenceSpaceCreateInfo view_info{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     view_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
