@@ -38,6 +38,7 @@ bool g_session_running{};
 XrSessionState g_session_state{XR_SESSION_STATE_UNKNOWN};
 bool g_frame_begun{};
 bool g_frame_should_render{};
+bool g_views_valid{};
 bool g_quad_layer_ready{};
 XrSwapchain g_swapchain{XR_NULL_HANDLE};
 std::vector<XrSwapchainImageOpenGLESKHR> g_swapchain_images;
@@ -328,7 +329,7 @@ PanelRect ComputeWorldPanelRect(const XrPosef& eye_pose, const XrFovf& fov) {
     return result;
 }
 
-void DrawQuestLaserPointers(const PanelRect& panel) {
+void DrawQuestLaserPointers(const PanelRect& panel, uint32_t eye) {
     glEnable(GL_SCISSOR_TEST);
     for (uint32_t hand = 0; hand < 2; ++hand) {
         const auto& state = g_controllers[hand].state;
@@ -363,20 +364,44 @@ void DrawQuestLaserPointers(const PanelRect& panel) {
         const float red = hand == 0 ? 0.05f : 1.0f;
         const float green = hand == 0 ? 0.9f : 0.75f;
         const float blue = hand == 0 ? 1.0f : 0.05f;
-        const int start_x = (panel.x0 + panel.x1) / 2;
-        const int start_y = panel.y0 + 8;
+        const auto& eye_view = g_projection_views[eye];
+        const XrQuaternionf inverse{-eye_view.pose.orientation.x, -eye_view.pose.orientation.y,
+                                    -eye_view.pose.orientation.z, eye_view.pose.orientation.w};
+        const auto project = [&](const XrVector3f& world, int& px, int& py) {
+            const XrVector3f relative{world.x - eye_view.pose.position.x,
+                                      world.y - eye_view.pose.position.y,
+                                      world.z - eye_view.pose.position.z};
+            const XrVector3f local = RotateVector(inverse, relative);
+            if (local.z >= -0.02f) return false;
+            const float left = std::tan(eye_view.fov.angleLeft);
+            const float right = std::tan(eye_view.fov.angleRight);
+            const float down = std::tan(eye_view.fov.angleDown);
+            const float up = std::tan(eye_view.fov.angleUp);
+            px = static_cast<int>(((local.x / -local.z - left) / (right - left)) *
+                                  static_cast<float>(g_swapchain_width));
+            py = static_cast<int>(((local.y / -local.z - down) / (up - down)) *
+                                  static_cast<float>(g_swapchain_height));
+            return true;
+        };
+        const XrVector3f origin{state.aim_position[0], state.aim_position[1],
+                                state.aim_position[2]};
+        const XrVector3f target{hit_x, hit_y, panel_z};
+        int start_x{}, start_y{};
+        if (!project(origin, start_x, start_y)) continue;
+        int projected_target_x{}, projected_target_y{};
+        if (!project(target, projected_target_x, projected_target_y)) continue;
         for (int step = 0; step <= 32; ++step) {
             const float t = static_cast<float>(step) / 32.0f;
-            const int x = start_x + static_cast<int>((target_x - start_x) * t);
-            const int y = start_y + static_cast<int>((target_y - start_y) * t);
+            const int x = start_x + static_cast<int>((projected_target_x - start_x) * t);
+            const int y = start_y + static_cast<int>((projected_target_y - start_y) * t);
             glScissor(x - 1, y - 1, 3, 3);
             glClearColor(red, green, blue, 0.9f);
             glClear(GL_COLOR_BUFFER_BIT);
         }
-        glScissor(target_x - 7, target_y - 7, 14, 14);
+        glScissor(projected_target_x - 7, projected_target_y - 7, 14, 14);
         glClearColor(red, green, blue, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        glScissor(target_x - 2, target_y - 2, 4, 4);
+        glScissor(projected_target_x - 2, projected_target_y - 2, 4, 4);
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
@@ -667,6 +692,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
     g_frame_begun = true;
     g_frame_should_render = frame_state.shouldRender == XR_TRUE;
     g_quad_layer_ready = false;
+    g_views_valid = false;
     g_display_time = frame_state.predictedDisplayTime;
 
     XrViewLocateInfo locate_info{XR_TYPE_VIEW_LOCATE_INFO};
@@ -691,6 +717,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
                 static_cast<int32_t>(g_swapchain_width), static_cast<int32_t>(g_swapchain_height)};
             g_projection_views[eye].subImage.imageArrayIndex = eye;
         }
+        g_views_valid = true;
     }
 
     XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
@@ -714,7 +741,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
 void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
                          uint32_t source_width, uint32_t source_height) {
     std::scoped_lock lock(g_mutex);
-    if (!g_frame_begun || !g_frame_should_render || g_swapchain == XR_NULL_HANDLE ||
+    if (!g_frame_begun || !g_frame_should_render || !g_views_valid || g_swapchain == XR_NULL_HANDLE ||
         left_texture == 0 || right_texture == 0 || source_width == 0 || source_height == 0) return;
 
     uint32_t image_index{};
@@ -742,8 +769,6 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
     glGetFloatv(GL_COLOR_CLEAR_VALUE, old_clear_color);
     glDisable(GL_SCISSOR_TEST);
     const GLuint sources[2] = {left_texture, right_texture};
-    const uint32_t image_height = std::min(g_swapchain_height, (g_swapchain_width * 3) / 5);
-    const uint32_t image_y = (g_swapchain_height - image_height) / 2;
     bool copied = true;
 
     for (uint32_t eye = 0; eye < 2; ++eye) {
@@ -774,7 +799,7 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
         glBlitFramebuffer(0, 0, source_width, source_height,
                           panel.x0, panel.y0, panel.x1, panel.y1,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
-        DrawQuestLaserPointers(panel);
+        DrawQuestLaserPointers(panel, eye);
         if (glGetError() != GL_NO_ERROR) {
             copied = false;
             Log("Failed copying a 3DS stereo eye into the OpenXR swapchain");
