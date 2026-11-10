@@ -29,6 +29,7 @@ XrSpace g_local_space{XR_NULL_HANDLE};
 XrSpace g_view_space{XR_NULL_HANDLE};
 bool g_session_running{};
 bool g_frame_begun{};
+QuestHeadPose g_latest_pose{};
 XrTime g_display_time{};
 
 void Log(const char* message) {
@@ -139,9 +140,6 @@ Java_org_citra_citra_emu_QuestOpenXr_setResumed(JNIEnv*, jobject, jboolean resum
 }
 
 namespace QuestOpenXR {
-void SetActivity(void*, void*) {}
-void SetResumed(bool) {}
-
 bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context) {
     std::scoped_lock lock(g_mutex);
     if (g_session != XR_NULL_HANDLE) return true;
@@ -256,6 +254,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
         pose.orientation[3] = location.pose.orientation.w;
         pose.valid = true;
     }
+    g_latest_pose = pose;
     return true;
 }
 
@@ -271,8 +270,28 @@ void EndFrame() {
     g_frame_begun = false;
 }
 
+void GetHeadPose(QuestHeadPose& pose) {
+    std::scoped_lock lock(g_mutex);
+    pose = g_latest_pose;
+}
+
 void Shutdown() {
     std::scoped_lock lock(g_mutex);
     DestroySessionLocked();
+    g_latest_pose = {};
 }
 } // namespace QuestOpenXR
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_org_citra_citra_emu_QuestOpenXr_getHeadPose(JNIEnv* env, jobject) {
+    QuestHeadPose pose{};
+    QuestOpenXR::GetHeadPose(pose);
+    const jfloat values[8] = {
+        pose.position[0], pose.position[1], pose.position[2],
+        pose.orientation[0], pose.orientation[1], pose.orientation[2],
+        pose.orientation[3], pose.valid ? 1.0f : 0.0f
+    };
+    jfloatArray result = env->NewFloatArray(8);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 8, values);
+    return result;
+}
