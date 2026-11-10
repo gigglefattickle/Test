@@ -155,7 +155,7 @@ jobs:
       - name: Install tools
         run: brew install ccache ninja spirv-tools
       - name: Install Conan
-        run: conan-io/setup-conan@v1
+        uses: conan-io/setup-conan@v1
       - name: Build FFmpeg
         run: conan install
                --output-folder=$HOME/conan
@@ -288,7 +288,7 @@ jobs:
       - name: Generate installer (MXE)
         if: ${{ github.ref_type == 'tag' && matrix.target == 'mxe' }}
         run: |
-          export PATH="/opt/mxe/usr/bin:${PATH}"
+          export PATH="/opt/mxe/usr/bin:${PATH}" # TODO: Why do we have to do this if it's in the image?
           cd src/installer
           x86_64-w64-mingw32.shared-makensis -DPRODUCT_VARIANT=${{ matrix.target }} -DPRODUCT_VERSION=${{ github.ref_name }} citra.nsi
           mkdir -p ../../artifacts
@@ -392,12 +392,7 @@ jobs:
           path: src/android/app/artifacts/
       - name: Attest artifacts
         if: ${{ github.ref_type == 'tag' }}
-        uses: anchore/sbom-action@v0
-        with:
-          path: src/android
-          format: spdx-json
-          output-file: src/android/app/artifacts/android-${{ matrix.target }}.spdx.json
-          upload-artifact: false
+        uses: actions/attest@v4
         with:
           subject-path: |
             src/android/app/artifacts/*.apk
@@ -415,6 +410,7 @@ jobs:
           os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
     container:
+      # Can't use docker:dind for ARM64 because it's Alpine-based, see https://github.com/actions/upload-artifact/issues/739
       image: earthbuild/dind:ubuntu-24.04-docker-28.5.2-1
     env:
       TARGET: ${{ matrix.target }}
@@ -445,7 +441,7 @@ jobs:
           path: artifacts/
       - name: Attest artifacts
         if: ${{ github.ref_type == 'tag' }}
-        uses: anchore/attest@v4
+        uses: actions/attest@v4
         with:
           subject-path: |
             artifacts/*.dockerimage
