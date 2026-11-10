@@ -93,7 +93,7 @@ class EmulationActivity : AppCompatActivity() {
                 2 to NativeLibrary.ButtonType.BUTTON_Y,
                 4 to NativeLibrary.ButtonType.TRIGGER_L,
                 8 to NativeLibrary.ButtonType.BUTTON_ZL,
-                16 to NativeLibrary.ButtonType.STICK_LEFT,
+                16 to NativeLibrary.ButtonType.BUTTON_START,
                 32 to NativeLibrary.ButtonType.BUTTON_SELECT
             ),
             listOf(
@@ -101,7 +101,7 @@ class EmulationActivity : AppCompatActivity() {
                 2 to NativeLibrary.ButtonType.BUTTON_B,
                 4 to NativeLibrary.ButtonType.TRIGGER_R,
                 8 to NativeLibrary.ButtonType.BUTTON_ZR,
-                16 to NativeLibrary.ButtonType.STICK_C
+                16 to NativeLibrary.ButtonType.BUTTON_SELECT
             )
         )
         for (hand in 0..1) {
