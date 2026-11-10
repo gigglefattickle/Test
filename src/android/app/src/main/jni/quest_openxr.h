@@ -11,10 +11,9 @@ struct QuestHeadPose {
 };
 
 namespace QuestOpenXR {
-void SetActivity(void* env, void* activity);
-void SetResumed(bool resumed);
 bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context);
 bool BeginFrameAndLocate(QuestHeadPose& pose);
+void GetHeadPose(QuestHeadPose& pose);
 void EndFrame();
 void Shutdown();
 } // namespace QuestOpenXR
