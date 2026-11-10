@@ -142,7 +142,7 @@ bool CreateControllerActionsLocked() {
     for (uint32_t hand = 0; hand < 2; ++hand) {
         auto& c = g_controllers[hand];
         for (uint32_t i = 0; i < 6; ++i) {
-            if (hand == 1 && i == 5) continue; // Touch Plus has no bindable right-hand menu button.
+            if (i == 2 || i == 3 || (hand == 1 && i == 5)) continue; // Analog trigger/grip are thresholded below; right menu is reserved.
             std::string path = std::string(hands[hand]) + buttons[hand][i];
             XrPath input{};
             if (XR_FAILED(xrStringToPath(g_instance, path.c_str(), &input))) return false;
@@ -216,6 +216,8 @@ void SyncControllerActionsLocked() {
         XrActionStateFloat squeeze_value{XR_TYPE_ACTION_STATE_FLOAT};
         if (XR_SUCCEEDED(xrGetActionStateFloat(g_session, &squeeze_get, &squeeze_value)) &&
             squeeze_value.isActive) c.state.squeeze = squeeze_value.currentState;
+        if (c.state.trigger >= 0.55f) c.state.buttons |= (1u << 2);
+        if (c.state.squeeze >= 0.65f) c.state.buttons |= (1u << 3);
         XrActionStateGetInfo stick_get{XR_TYPE_ACTION_STATE_GET_INFO};
         stick_get.action = c.stick;
         stick_get.subactionPath = c.hand_path;
