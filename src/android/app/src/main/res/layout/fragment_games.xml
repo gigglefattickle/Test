@@ -12,11 +12,22 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/new_leaf_import"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/spacing_large"
+            android:layout_marginTop="@dimen/spacing_large"
+            android:layout_marginEnd="@dimen/spacing_large"
+            android:text="Animal Crossing: New Leaf — Import / Play"
+            android:contentDescription="Import or install your own Animal Crossing: New Leaf game file" />
+
         <com.google.android.material.textview.MaterialTextView
             android:id="@+id/notice_text"
             style="@style/TextAppearance.Material3.BodyLarge"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:layout_below="@id/new_leaf_import"
             android:gravity="center"
             android:padding="@dimen/spacing_large"
             android:text="@string/empty_gamelist"
@@ -26,6 +37,7 @@
             android:id="@+id/grid_games"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:layout_below="@id/new_leaf_import"
             android:clipToPadding="false"
             tools:listitem="@layout/card_game" />
 
