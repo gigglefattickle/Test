@@ -170,8 +170,11 @@ bool RendererOpenGL::GetQuestStereoTextures(GLuint& left, GLuint& right, u32& wi
                                framebuffer.address_right2 != 0 &&
                                screen_infos[1].display_texture != 0;
     right = has_right_eye ? screen_infos[1].display_texture : left;
-    width = screen_infos[0].texture.width;
-    height = screen_infos[0].texture.height;
+    const bool uses_scaled_cache =
+        screen_infos[0].display_texture != screen_infos[0].texture.resource.handle;
+    const u32 scale = uses_scaled_cache ? GetResolutionScaleFactor() : 1;
+    width = screen_infos[0].texture.width * scale;
+    height = screen_infos[0].texture.height * scale;
     return width != 0 && height != 0;
 }
 
