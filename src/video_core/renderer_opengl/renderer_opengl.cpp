@@ -157,6 +157,20 @@ void RendererOpenGL::SwapBuffers() {
     rasterizer.TickFrame();
 }
 
+bool RendererOpenGL::GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width,
+                                             u32& height) const {
+    const auto& framebuffer = pica.regs.framebuffer_config[0];
+    if (framebuffer.address_right1 == 0 || framebuffer.address_right2 == 0 ||
+        screen_infos[0].display_texture == 0 || screen_infos[1].display_texture == 0) {
+        return false;
+    }
+    left = screen_infos[0].display_texture;
+    right = screen_infos[1].display_texture;
+    width = screen_infos[0].texture.width;
+    height = screen_infos[0].texture.height;
+    return width != 0 && height != 0;
+}
+
 void RendererOpenGL::LimitFramesAheadOfGpu() {
     const GLsync game_frame_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();
