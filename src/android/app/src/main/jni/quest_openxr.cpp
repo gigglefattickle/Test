@@ -342,6 +342,8 @@ void PresentFrame(EGLint source_width, EGLint source_height) {
         return;
     }
 
+    while (glGetError() != GL_NO_ERROR) {
+    }
     GLint old_read{}, old_draw{}, old_read_buffer{};
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
