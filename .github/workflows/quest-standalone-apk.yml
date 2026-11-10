@@ -1,0 +1,11 @@
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'chatgpt/quest-standalone-upgrade-v2'
+    paths:
+      - 'quest/**'
+      - 'pc/**'
+      - 'src/**'
+      - 'include/**'
+      - '.github/workflows/quest-standalone-apk.yml'
