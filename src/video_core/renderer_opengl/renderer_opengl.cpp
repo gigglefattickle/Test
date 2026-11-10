@@ -159,16 +159,14 @@ void RendererOpenGL::SwapBuffers() {
 
 bool RendererOpenGL::GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width,
                                              u32& height) const {
-    const auto& framebuffer = pica.regs.framebuffer_config[0];
+    std::scoped_lock stereo_lock(quest_stereo_mutex);
     if (screen_infos[0].display_texture == 0) {
         return false;
     }
     left = screen_infos[0].display_texture;
     // If the running title has not enabled 3DS stereoscopic output, mirror the
     // left eye so the game remains visible in both headset eyes without depth.
-    const bool has_right_eye = framebuffer.address_right1 != 0 &&
-                               framebuffer.address_right2 != 0 &&
-                               screen_infos[1].display_texture != 0;
+    const bool has_right_eye = quest_has_right_eye && screen_infos[1].display_texture != 0;
     right = has_right_eye ? screen_infos[1].display_texture : left;
     const bool uses_scaled_cache =
         screen_infos[0].display_texture != screen_infos[0].texture.resource.handle;
@@ -222,7 +220,10 @@ void RendererOpenGL::RenderScreenshot() {
 }
 
 void RendererOpenGL::PrepareRendertarget() {
+    std::scoped_lock stereo_lock(quest_stereo_mutex);
     const auto& framebuffer_config = pica.regs.framebuffer_config;
+    quest_has_right_eye = framebuffer_config[0].address_right1 != 0 &&
+                          framebuffer_config[0].address_right2 != 0;
     const auto& regs_lcd = pica.regs_lcd;
     for (u32 i = 0; i < 3; i++) {
         const u32 fb_id = i == 2 ? 1 : 0;
