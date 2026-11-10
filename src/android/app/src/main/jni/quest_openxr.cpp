@@ -8,6 +8,8 @@
 
 #include <GLES3/gl3.h>
 
+#include <algorithm>
+
 #include <android/log.h>
 #include <jni.h>
 
