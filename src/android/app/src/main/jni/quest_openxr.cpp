@@ -376,9 +376,15 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
 
     while (glGetError() != GL_NO_ERROR) {}
     GLint old_read{}, old_draw{}, old_read_buffer{};
+    GLint old_viewport[4]{};
+    GLfloat old_clear_color[4]{};
+    const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
     glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+    glGetIntegerv(GL_VIEWPORT, old_viewport);
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, old_clear_color);
+    glDisable(GL_SCISSOR_TEST);
     const GLuint sources[2] = {left_texture, right_texture};
     const uint32_t image_height = std::min(g_swapchain_height, (g_swapchain_width * 3) / 5);
     const uint32_t image_y = (g_swapchain_height - image_height) / 2;
@@ -414,6 +420,9 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
     glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
     glReadBuffer(static_cast<GLenum>(old_read_buffer));
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+    glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+    glClearColor(old_clear_color[0], old_clear_color[1], old_clear_color[2], old_clear_color[3]);
+    if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST);
 
     XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     if (XR_FAILED(xrReleaseSwapchainImage(g_swapchain, &release))) copied = false;
