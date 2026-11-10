@@ -17,10 +17,14 @@ object QuestOpenXr {
     external fun setActivity(activity: Activity?)
     external fun setResumed(resumed: Boolean)
     external fun getHeadPose(): FloatArray
+    external fun getControllerStates(): FloatArray
 
     fun initialize(context: Context): Boolean =
         initializeLoader(context.applicationContext) == XR_SUCCESS
 
     /** Returns [x, y, z, qx, qy, qz, qw, valid] in the OpenXR LOCAL space. */
     fun headPose(): FloatArray = getHeadPose()
+
+    /** Two 21-float records: grip pose, aim pose, buttons, trigger, squeeze, stick, validity. */
+    fun controllerStates(): FloatArray = getControllerStates()
 }
