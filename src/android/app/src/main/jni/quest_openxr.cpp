@@ -261,6 +261,62 @@ bool HasExtension(const char* wanted) {
     return false;
 }
 
+
+void DrawQuestLaserPointers(uint32_t image_y, uint32_t image_height) {
+    glEnable(GL_SCISSOR_TEST);
+    for (uint32_t hand = 0; hand < 2; ++hand) {
+        const auto& state = g_controllers[hand].state;
+        if (!state.pose_valid) continue;
+        const float qx = state.aim_orientation[0];
+        const float qy = state.aim_orientation[1];
+        const float qz = state.aim_orientation[2];
+        const float qw = state.aim_orientation[3];
+        const float dx = -2.0f * (qw * qy + qz * qx);
+        const float dy = 2.0f * (qw * qx - qz * qy);
+        const float dz = -1.0f + 2.0f * (qx * qx + qy * qy);
+        if (dz > -0.02f) continue;
+
+        // The New Leaf/3DS image is presented on a 5:3 world-anchored virtual panel.
+        constexpr float panel_z = -2.5f;
+        constexpr float panel_center_y = 1.25f;
+        constexpr float panel_width = 1.6f;
+        constexpr float panel_height = 0.96f;
+        const float distance = (panel_z - state.aim_position[2]) / dz;
+        if (distance <= 0.0f) continue;
+        const float hit_x = state.aim_position[0] + dx * distance;
+        const float hit_y = state.aim_position[1] + dy * distance;
+        if (hit_x < -panel_width * 0.5f || hit_x > panel_width * 0.5f ||
+            hit_y < panel_center_y - panel_height * 0.5f ||
+            hit_y > panel_center_y + panel_height * 0.5f) continue;
+
+        const int target_x = static_cast<int>(
+            (hit_x / panel_width + 0.5f) * static_cast<float>(g_swapchain_width));
+        const int target_y = static_cast<int>(
+            image_y + ((hit_y - (panel_center_y - panel_height * 0.5f)) / panel_height) *
+                          static_cast<float>(image_height));
+        const float red = hand == 0 ? 0.05f : 1.0f;
+        const float green = hand == 0 ? 0.9f : 0.75f;
+        const float blue = hand == 0 ? 1.0f : 0.05f;
+        const int start_x = static_cast<int>(g_swapchain_width / 2);
+        const int start_y = static_cast<int>(image_y + 8);
+        for (int step = 0; step <= 32; ++step) {
+            const float t = static_cast<float>(step) / 32.0f;
+            const int x = start_x + static_cast<int>((target_x - start_x) * t);
+            const int y = start_y + static_cast<int>((target_y - start_y) * t);
+            glScissor(x - 1, y - 1, 3, 3);
+            glClearColor(red, green, blue, 0.9f);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+        glScissor(target_x - 7, target_y - 7, 14, 14);
+        glClearColor(red, green, blue, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glScissor(target_x - 2, target_y - 2, 4, 4);
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    glDisable(GL_SCISSOR_TEST);
+}
+
 bool CreateSwapchainLocked() {
     uint32_t view_count{};
     if (XR_FAILED(xrEnumerateViewConfigurationViews(
@@ -587,6 +643,8 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
     GLint old_viewport[4]{};
     GLfloat old_clear_color[4]{};
     const GLboolean scissor_was_enabled = glIsEnabled(GL_SCISSOR_TEST);
+    GLint old_scissor_box[4]{};
+    glGetIntegerv(GL_SCISSOR_BOX, old_scissor_box);
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
     glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
@@ -619,6 +677,7 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
         glBlitFramebuffer(0, 0, source_width, source_height,
                           0, image_y, g_swapchain_width, image_y + image_height,
                           GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        DrawQuestLaserPointers(image_y, image_height);
         if (glGetError() != GL_NO_ERROR) {
             copied = false;
             Log("Failed copying a 3DS stereo eye into the OpenXR swapchain");
@@ -630,6 +689,7 @@ void PresentStereoFrame(GLuint left_texture, GLuint right_texture,
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
     glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
     glClearColor(old_clear_color[0], old_clear_color[1], old_clear_color[2], old_clear_color[3]);
+    glScissor(old_scissor_box[0], old_scissor_box[1], old_scissor_box[2], old_scissor_box[3]);
     if (scissor_was_enabled) glEnable(GL_SCISSOR_TEST);
 
     XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
