@@ -6,13 +6,17 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
+#include <GLES3/gl3.h>
+
 #include <android/log.h>
 #include <jni.h>
 
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "quest_openxr.h"
@@ -30,6 +34,13 @@ XrSpace g_view_space{XR_NULL_HANDLE};
 bool g_session_running{};
 XrSessionState g_session_state{XR_SESSION_STATE_UNKNOWN};
 bool g_frame_begun{};
+bool g_frame_should_render{};
+bool g_quad_layer_ready{};
+XrSwapchain g_swapchain{XR_NULL_HANDLE};
+std::vector<XrSwapchainImageOpenGLESKHR> g_swapchain_images;
+constexpr uint32_t g_swapchain_width = 2048;
+constexpr uint32_t g_swapchain_height = 1152;
+GLuint g_copy_framebuffer{};
 QuestHeadPose g_latest_pose{};
 XrTime g_display_time{};
 
@@ -48,6 +59,34 @@ bool HasExtension(const char* wanted) {
     return false;
 }
 
+bool CreateSwapchainLocked() {
+    uint32_t format_count{};
+    if (XR_FAILED(xrEnumerateSwapchainFormats(g_session, 0, &format_count, nullptr)) || !format_count) return false;
+    std::vector<int64_t> formats(format_count);
+    if (XR_FAILED(xrEnumerateSwapchainFormats(g_session, format_count, &format_count, formats.data()))) return false;
+    if (std::find(formats.begin(), formats.end(), static_cast<int64_t>(GL_RGBA8)) == formats.end()) {
+        Log("OpenXR runtime does not support GL_RGBA8 swapchain images");
+        return false;
+    }
+    XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+    info.format = GL_RGBA8;
+    info.sampleCount = 1;
+    info.width = g_swapchain_width;
+    info.height = g_swapchain_height;
+    info.faceCount = 1;
+    info.arraySize = 1;
+    info.mipCount = 1;
+    if (XR_FAILED(xrCreateSwapchain(g_session, &info, &g_swapchain))) return false;
+    uint32_t image_count{};
+    if (XR_FAILED(xrEnumerateSwapchainImages(g_swapchain, 0, &image_count, nullptr)) || !image_count) return false;
+    g_swapchain_images.assign(image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+    if (XR_FAILED(xrEnumerateSwapchainImages(g_swapchain, image_count, &image_count,
+        reinterpret_cast<XrSwapchainImageBaseHeader*>(g_swapchain_images.data())))) return false;
+    glGenFramebuffers(1, &g_copy_framebuffer);
+    return g_copy_framebuffer != 0;
+}
+
 void DestroySessionLocked() {
     if (g_frame_begun && g_session != XR_NULL_HANDLE) {
         XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
@@ -60,6 +99,12 @@ void DestroySessionLocked() {
         xrEndSession(g_session);
         g_session_running = false;
     }
+    if (g_swapchain != XR_NULL_HANDLE) xrDestroySwapchain(g_swapchain);
+    if (g_copy_framebuffer) glDeleteFramebuffers(1, &g_copy_framebuffer);
+    g_swapchain = XR_NULL_HANDLE;
+    g_copy_framebuffer = 0;
+    g_swapchain_images.clear();
+    g_quad_layer_ready = false;
     if (g_view_space != XR_NULL_HANDLE) xrDestroySpace(g_view_space);
     if (g_local_space != XR_NULL_HANDLE) xrDestroySpace(g_local_space);
     if (g_session != XR_NULL_HANDLE) xrDestroySession(g_session);
@@ -234,7 +279,12 @@ bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context) {
         DestroySessionLocked();
         return false;
     }
-    Log("OpenXR OpenGL ES session and head reference spaces created");
+    if (!CreateSwapchainLocked()) {
+        Log("Failed to create OpenXR game-screen swapchain");
+        DestroySessionLocked();
+        return false;
+    }
+    Log("OpenXR OpenGL ES session, head tracking, and game-screen swapchain created");
     PollEventsLocked();
     return true;
 }
@@ -253,6 +303,8 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
     XrFrameBeginInfo begin_info{XR_TYPE_FRAME_BEGIN_INFO};
     if (XR_FAILED(xrBeginFrame(g_session, &begin_info))) return false;
     g_frame_begun = true;
+    g_frame_should_render = frame_state.shouldRender == XR_TRUE;
+    g_quad_layer_ready = false;
     g_display_time = frame_state.predictedDisplayTime;
 
     XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
@@ -272,15 +324,76 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
     return true;
 }
 
+void PresentFrame(EGLint source_width, EGLint source_height) {
+    std::scoped_lock lock(g_mutex);
+    if (!g_frame_begun || !g_frame_should_render || g_swapchain == XR_NULL_HANDLE ||
+        source_width <= 0 || source_height <= 0) return;
+
+    uint32_t image_index{};
+    XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    if (XR_FAILED(xrAcquireSwapchainImage(g_swapchain, &acquire, &image_index))) return;
+    XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    wait.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(xrWaitSwapchainImage(g_swapchain, &wait))) {
+        XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        xrReleaseSwapchainImage(g_swapchain, &release);
+        return;
+    }
+
+    GLint old_read{}, old_draw{}, old_read_buffer{};
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+    glGetIntegerv(GL_READ_BUFFER, &old_read_buffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_copy_framebuffer);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           g_swapchain_images[image_index].image, 0);
+    if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadBuffer(GL_BACK);
+        glBlitFramebuffer(0, 0, source_width, source_height, 0, 0,
+                          g_swapchain_width, g_swapchain_height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glFlush();
+        g_quad_layer_ready = glGetError() == GL_NO_ERROR;
+    } else {
+        Log("OpenXR copy framebuffer is incomplete");
+    }
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
+    glReadBuffer(static_cast<GLenum>(old_read_buffer));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+
+    XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    if (XR_FAILED(xrReleaseSwapchainImage(g_swapchain, &release))) {
+        g_quad_layer_ready = false;
+        Log("Failed to release OpenXR swapchain image");
+    }
+}
+
 void EndFrame() {
     std::scoped_lock lock(g_mutex);
     if (!g_frame_begun || g_session == XR_NULL_HANDLE) return;
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
     end_info.displayTime = g_display_time;
     end_info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    end_info.layerCount = 0;
-    end_info.layers = nullptr;
+    XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    XrCompositionLayerBaseHeader* layers[] = {
+        reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad)
+    };
+    if (g_quad_layer_ready) {
+        quad.space = g_local_space;
+        quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+        quad.subImage.swapchain = g_swapchain;
+        quad.subImage.imageRect.offset = {0, 0};
+        quad.subImage.imageRect.extent = {static_cast<int32_t>(g_swapchain_width),
+                                          static_cast<int32_t>(g_swapchain_height)};
+        quad.pose.orientation.w = 1.0f;
+        quad.pose.position = {0.0f, 1.35f, -2.0f};
+        quad.size = {2.4f, 1.35f};
+    }
+    end_info.layerCount = g_quad_layer_ready ? 1u : 0u;
+    end_info.layers = g_quad_layer_ready ? layers : nullptr;
     xrEndFrame(g_session, &end_info);
+    g_frame_should_render = false;
+    g_quad_layer_ready = false;
     g_frame_begun = false;
 }
 
@@ -291,6 +404,17 @@ void GetHeadPose(QuestHeadPose& pose) {
 
 void Shutdown() {
     std::scoped_lock lock(g_mutex);
+    if (g_session != XR_NULL_HANDLE && g_session_running) {
+        xrRequestExitSession(g_session);
+        for (int attempt = 0; attempt < 100 && g_session_running; ++attempt) {
+            PollEventsLocked();
+            if (g_session_running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (g_session_running) {
+            Log("OpenXR exit was not acknowledged; deferring session destruction");
+            return;
+        }
+    }
     DestroySessionLocked();
     g_latest_pose = {};
 }
