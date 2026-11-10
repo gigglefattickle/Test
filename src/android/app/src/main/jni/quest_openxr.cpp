@@ -53,6 +53,8 @@ std::array<XrCompositionLayerProjectionView, 2> g_projection_views{
     XrCompositionLayerProjectionView{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
     XrCompositionLayerProjectionView{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
 QuestHeadPose g_latest_pose{};
+XrTime g_display_time{};
+void Log(const char* message);
 
 struct ControllerActions {
     XrPath hand_path{XR_NULL_PATH};
@@ -136,6 +138,7 @@ bool CreateControllerActionsLocked() {
     for (uint32_t hand = 0; hand < 2; ++hand) {
         auto& c = g_controllers[hand];
         for (uint32_t i = 0; i < 6; ++i) {
+            if (hand == 1 && i == 5) continue; // Touch Plus has no bindable right-hand menu button.
             std::string path = std::string(hands[hand]) + buttons[hand][i];
             XrPath input{};
             if (XR_FAILED(xrStringToPath(g_instance, path.c_str(), &input))) return false;
@@ -246,8 +249,6 @@ void SyncControllerActionsLocked() {
     }
 }
 
-XrTime g_display_time{};
-
 void Log(const char* message) {
     __android_log_write(ANDROID_LOG_INFO, "AzaharOpenXR", message);
 }
@@ -356,11 +357,6 @@ void DrawQuestLaserPointers(const PanelRect& panel, uint32_t eye) {
             hit_y < panel_center_y - panel_height * 0.5f ||
             hit_y > panel_center_y + panel_height * 0.5f) continue;
 
-        const int target_x = panel.x0 + static_cast<int>(
-            (hit_x / panel_width + 0.5f) * static_cast<float>(panel.x1 - panel.x0));
-        const int target_y = panel.y0 + static_cast<int>(
-            ((hit_y - (panel_center_y - panel_height * 0.5f)) / panel_height) *
-            static_cast<float>(panel.y1 - panel.y0));
         const float red = hand == 0 ? 0.05f : 1.0f;
         const float green = hand == 0 ? 0.9f : 0.75f;
         const float blue = hand == 0 ? 1.0f : 0.05f;
@@ -389,7 +385,7 @@ void DrawQuestLaserPointers(const PanelRect& panel, uint32_t eye) {
         int start_x{}, start_y{};
         if (!project(origin, start_x, start_y)) continue;
         int projected_target_x{}, projected_target_y{};
-        if (!project(target, projected_target_x, projected_target_y)) continue;
+        if (!project(target, projected_target_x, projected_target_y) ||\n            projected_target_x < panel.x0 || projected_target_x >= panel.x1 ||\n            projected_target_y < panel.y0 || projected_target_y >= panel.y1) continue;
         for (int step = 0; step <= 32; ++step) {
             const float t = static_cast<float>(step) / 32.0f;
             const int x = start_x + static_cast<int>((projected_target_x - start_x) * t);
