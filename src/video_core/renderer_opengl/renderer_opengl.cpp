@@ -158,7 +158,7 @@ void RendererOpenGL::SwapBuffers() {
 }
 
 bool RendererOpenGL::GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width,
-                                             u32& height) const {
+                                             u32& height) {
     std::scoped_lock stereo_lock(quest_stereo_mutex);
     if (screen_infos[0].display_texture == 0) {
         return false;
