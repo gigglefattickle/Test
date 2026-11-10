@@ -229,6 +229,7 @@ bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context) {
 bool BeginFrameAndLocate(QuestHeadPose& pose) {
     std::scoped_lock lock(g_mutex);
     pose.valid = false;
+    g_latest_pose = {};
     if (g_session == XR_NULL_HANDLE) return false;
     PollEventsLocked();
     if (!g_session_running) return false;
