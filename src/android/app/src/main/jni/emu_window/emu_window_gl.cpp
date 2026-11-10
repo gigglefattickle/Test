@@ -258,6 +258,9 @@ void EmuWindow_Android_OpenGL::TryPresenting() {
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     eglSwapInterval(egl_display, Settings::values.use_vsync ? 1 : 0);
     system.GPU().Renderer().TryPresent(0, is_secondary);
+    if (!is_secondary) {
+        QuestOpenXR::PresentFrame(window_width, window_height);
+    }
     eglSwapBuffers(egl_display, egl_surface);
     if (!is_secondary) {
         QuestOpenXR::EndFrame();
