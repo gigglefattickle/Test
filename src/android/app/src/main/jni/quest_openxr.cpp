@@ -51,6 +51,199 @@ std::array<XrCompositionLayerProjectionView, 2> g_projection_views{
     XrCompositionLayerProjectionView{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
     XrCompositionLayerProjectionView{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
 QuestHeadPose g_latest_pose{};
+
+struct ControllerActions {
+    XrPath hand_path{XR_NULL_PATH};
+    XrAction buttons[6]{};
+    XrAction trigger{XR_NULL_HANDLE};
+    XrAction squeeze{XR_NULL_HANDLE};
+    XrAction stick{XR_NULL_HANDLE};
+    XrAction grip_pose{XR_NULL_HANDLE};
+    XrAction aim_pose{XR_NULL_HANDLE};
+    XrSpace grip_space{XR_NULL_HANDLE};
+    XrSpace aim_space{XR_NULL_HANDLE};
+    QuestControllerState state{};
+};
+XrActionSet g_action_set{XR_NULL_HANDLE};
+std::array<ControllerActions, 2> g_controllers{};
+
+bool CreateControllerActionsLocked() {
+    XrActionSetCreateInfo set_info{XR_TYPE_ACTION_SET_CREATE_INFO};
+    std::strncpy(set_info.actionSetName, "quest_controller", XR_MAX_ACTION_SET_NAME_SIZE - 1);
+    std::strncpy(set_info.localizedActionSetName, "Quest Controllers",
+                 XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+    if (XR_FAILED(xrCreateActionSet(g_instance, &set_info, &g_action_set))) return false;
+
+    const char* hands[] = {"/user/hand/left", "/user/hand/right"};
+    const char* buttons[2][6] = {
+        {"/input/x/click", "/input/y/click", "/input/trigger/click",
+         "/input/squeeze/click", "/input/thumbstick/click", "/input/menu/click"},
+        {"/input/a/click", "/input/b/click", "/input/trigger/click",
+         "/input/squeeze/click", "/input/thumbstick/click", "/input/menu/click"}
+    };
+    const char* button_names[] = {"face_primary", "face_secondary", "trigger_click",
+                                  "squeeze_click", "stick_click", "menu_click"};
+    const char* analog_paths[] = {"/input/trigger/value", "/input/squeeze/value",
+                                  "/input/thumbstick"};
+    const char* pose_paths[] = {"/input/grip/pose", "/input/aim/pose"};
+    for (uint32_t hand = 0; hand < 2; ++hand) {
+        auto& c = g_controllers[hand];
+        if (XR_FAILED(xrStringToPath(g_instance, hands[hand], &c.hand_path))) return false;
+        for (uint32_t i = 0; i < 6; ++i) {
+            XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+            info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
+            info.countSubactionPaths = 1;
+            info.subactionPaths = &c.hand_path;
+            std::strncpy(info.actionName, button_names[i], XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, button_names[i],
+                         XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+            if (XR_FAILED(xrCreateAction(g_action_set, &info, &c.buttons[i]))) return false;
+        }
+        XrAction* analog_actions[] = {&c.trigger, &c.squeeze, &c.stick};
+        const XrActionType analog_types[] = {XR_ACTION_TYPE_FLOAT_INPUT,
+            XR_ACTION_TYPE_FLOAT_INPUT, XR_ACTION_TYPE_VECTOR2F_INPUT};
+        for (uint32_t i = 0; i < 3; ++i) {
+            XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+            info.actionType = analog_types[i];
+            info.countSubactionPaths = 1;
+            info.subactionPaths = &c.hand_path;
+            std::strncpy(info.actionName, i == 0 ? "trigger_value" :
+                         i == 1 ? "squeeze_value" : "thumbstick", XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, analog_paths[i],
+                         XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+            if (XR_FAILED(xrCreateAction(g_action_set, &info, analog_actions[i]))) return false;
+        }
+        XrAction* pose_actions[] = {&c.grip_pose, &c.aim_pose};
+        for (uint32_t i = 0; i < 2; ++i) {
+            XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+            info.actionType = XR_ACTION_TYPE_POSE_INPUT;
+            info.countSubactionPaths = 1;
+            info.subactionPaths = &c.hand_path;
+            std::strncpy(info.actionName, i == 0 ? "grip_pose" : "aim_pose",
+                         XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, pose_paths[i],
+                         XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+            if (XR_FAILED(xrCreateAction(g_action_set, &info, pose_actions[i]))) return false;
+        }
+    }
+
+    XrPath profile{};
+    if (XR_FAILED(xrStringToPath(g_instance, "/interaction_profiles/oculus/touch_controller",
+                                 &profile))) return false;
+    std::vector<XrActionSuggestedBinding> bindings;
+    for (uint32_t hand = 0; hand < 2; ++hand) {
+        auto& c = g_controllers[hand];
+        for (uint32_t i = 0; i < 6; ++i) {
+            std::string path = std::string(hands[hand]) + buttons[hand][i];
+            XrPath input{};
+            if (XR_FAILED(xrStringToPath(g_instance, path.c_str(), &input))) return false;
+            bindings.push_back({c.buttons[i], input});
+        }
+        for (uint32_t i = 0; i < 3; ++i) {
+            std::string path = std::string(hands[hand]) + analog_paths[i];
+            XrPath input{};
+            if (XR_FAILED(xrStringToPath(g_instance, path.c_str(), &input))) return false;
+            bindings.push_back({i == 0 ? c.trigger : i == 1 ? c.squeeze : c.stick, input});
+        }
+        for (uint32_t i = 0; i < 2; ++i) {
+            std::string path = std::string(hands[hand]) + pose_paths[i];
+            XrPath input{};
+            if (XR_FAILED(xrStringToPath(g_instance, path.c_str(), &input))) return false;
+            bindings.push_back({i == 0 ? c.grip_pose : c.aim_pose, input});
+        }
+    }
+    XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    suggested.interactionProfile = profile;
+    suggested.countSuggestedBindings = static_cast<uint32_t>(bindings.size());
+    suggested.suggestedBindings = bindings.data();
+    if (XR_FAILED(xrSuggestInteractionProfileBindings(g_instance, &suggested))) return false;
+    XrSessionActionSetsAttachInfo attach{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+    attach.countActionSets = 1;
+    attach.actionSets = &g_action_set;
+    if (XR_FAILED(xrAttachSessionActionSets(g_session, &attach))) return false;
+
+    for (auto& c : g_controllers) {
+        XrActionSpaceCreateInfo grip{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        grip.action = c.grip_pose;
+        grip.subactionPath = c.hand_path;
+        grip.poseInActionSpace.orientation.w = 1.0f;
+        if (XR_FAILED(xrCreateActionSpace(g_session, &grip, &c.grip_space))) return false;
+        XrActionSpaceCreateInfo aim{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        aim.action = c.aim_pose;
+        aim.subactionPath = c.hand_path;
+        aim.poseInActionSpace.orientation.w = 1.0f;
+        if (XR_FAILED(xrCreateActionSpace(g_session, &aim, &c.aim_space))) return false;
+    }
+    Log("Quest Touch controller actions created");
+    return true;
+}
+
+void SyncControllerActionsLocked() {
+    if (g_action_set == XR_NULL_HANDLE || !g_session_running) return;
+    XrActiveActionSet active{g_action_set, XR_NULL_PATH};
+    XrActionsSyncInfo sync{XR_TYPE_ACTIONS_SYNC_INFO};
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+    if (XR_FAILED(xrSyncActions(g_session, &sync))) return;
+    for (auto& c : g_controllers) {
+        c.state = {};
+        for (uint32_t i = 0; i < 6; ++i) {
+            XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+            get.action = c.buttons[i];
+            get.subactionPath = c.hand_path;
+            XrActionStateBoolean value{XR_TYPE_ACTION_STATE_BOOLEAN};
+            if (XR_SUCCEEDED(xrGetActionStateBoolean(g_session, &get, &value)) &&
+                value.isActive && value.currentState) c.state.buttons |= (1u << i);
+        }
+        XrActionStateGetInfo trigger_get{XR_TYPE_ACTION_STATE_GET_INFO};
+        trigger_get.action = c.trigger;
+        trigger_get.subactionPath = c.hand_path;
+        XrActionStateFloat trigger_value{XR_TYPE_ACTION_STATE_FLOAT};
+        if (XR_SUCCEEDED(xrGetActionStateFloat(g_session, &trigger_get, &trigger_value)) &&
+            trigger_value.isActive) c.state.trigger = trigger_value.currentState;
+        XrActionStateGetInfo squeeze_get{XR_TYPE_ACTION_STATE_GET_INFO};
+        squeeze_get.action = c.squeeze;
+        squeeze_get.subactionPath = c.hand_path;
+        XrActionStateFloat squeeze_value{XR_TYPE_ACTION_STATE_FLOAT};
+        if (XR_SUCCEEDED(xrGetActionStateFloat(g_session, &squeeze_get, &squeeze_value)) &&
+            squeeze_value.isActive) c.state.squeeze = squeeze_value.currentState;
+        XrActionStateGetInfo stick_get{XR_TYPE_ACTION_STATE_GET_INFO};
+        stick_get.action = c.stick;
+        stick_get.subactionPath = c.hand_path;
+        XrActionStateVector2f stick_value{XR_TYPE_ACTION_STATE_VECTOR2F};
+        if (XR_SUCCEEDED(xrGetActionStateVector2f(g_session, &stick_get, &stick_value)) &&
+            stick_value.isActive) {
+            c.state.stick_x = stick_value.currentState.x;
+            c.state.stick_y = stick_value.currentState.y;
+        }
+        XrSpaceLocation grip{XR_TYPE_SPACE_LOCATION};
+        XrSpaceLocation aim{XR_TYPE_SPACE_LOCATION};
+        if (XR_SUCCEEDED(xrLocateSpace(c.grip_space, g_local_space, g_display_time, &grip)) &&
+            (grip.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) &&
+            (grip.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+            c.state.grip_position[0] = grip.pose.position.x;
+            c.state.grip_position[1] = grip.pose.position.y;
+            c.state.grip_position[2] = grip.pose.position.z;
+            c.state.grip_orientation[0] = grip.pose.orientation.x;
+            c.state.grip_orientation[1] = grip.pose.orientation.y;
+            c.state.grip_orientation[2] = grip.pose.orientation.z;
+            c.state.grip_orientation[3] = grip.pose.orientation.w;
+        }
+        if (XR_SUCCEEDED(xrLocateSpace(c.aim_space, g_local_space, g_display_time, &aim)) &&
+            (aim.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) &&
+            (aim.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+            c.state.aim_position[0] = aim.pose.position.x;
+            c.state.aim_position[1] = aim.pose.position.y;
+            c.state.aim_position[2] = aim.pose.position.z;
+            c.state.aim_orientation[0] = aim.pose.orientation.x;
+            c.state.aim_orientation[1] = aim.pose.orientation.y;
+            c.state.aim_orientation[2] = aim.pose.orientation.z;
+            c.state.aim_orientation[3] = aim.pose.orientation.w;
+            c.state.pose_valid = true;
+        }
+    }
+}
+
 XrTime g_display_time{};
 
 void Log(const char* message) {
@@ -138,6 +331,15 @@ void DestroySessionLocked() {
     g_draw_framebuffer = 0;
     g_swapchain_images.clear();
     g_quad_layer_ready = false;
+    for (auto& c : g_controllers) {
+        if (c.grip_space != XR_NULL_HANDLE) xrDestroySpace(c.grip_space);
+        if (c.aim_space != XR_NULL_HANDLE) xrDestroySpace(c.aim_space);
+        c.grip_space = XR_NULL_HANDLE;
+        c.aim_space = XR_NULL_HANDLE;
+        c.state = {};
+    }
+    if (g_action_set != XR_NULL_HANDLE) xrDestroyActionSet(g_action_set);
+    g_action_set = XR_NULL_HANDLE;
     if (g_view_space != XR_NULL_HANDLE) xrDestroySpace(g_view_space);
     if (g_local_space != XR_NULL_HANDLE) xrDestroySpace(g_local_space);
     if (g_session != XR_NULL_HANDLE) xrDestroySession(g_session);
@@ -312,6 +514,11 @@ bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context) {
         DestroySessionLocked();
         return false;
     }
+    if (!CreateControllerActionsLocked()) {
+        Log("Failed to create Quest controller actions");
+        DestroySessionLocked();
+        return false;
+    }
     if (!CreateSwapchainLocked()) {
         Log("Failed to create OpenXR game-screen swapchain");
         DestroySessionLocked();
@@ -354,6 +561,7 @@ bool BeginFrameAndLocate(QuestHeadPose& pose) {
         pose.valid = true;
     }
     g_latest_pose = pose;
+    SyncControllerActionsLocked();
     return true;
 }
 
@@ -489,6 +697,12 @@ void GetHeadPose(QuestHeadPose& pose) {
     pose = g_latest_pose;
 }
 
+void GetControllerStates(QuestControllerState (&states)[2]) {
+    std::scoped_lock lock(g_mutex);
+    states[0] = g_controllers[0].state;
+    states[1] = g_controllers[1].state;
+}
+
 void Shutdown() {
     std::scoped_lock lock(g_mutex);
     if (g_session != XR_NULL_HANDLE && g_session_running) {
@@ -518,5 +732,30 @@ Java_org_citra_citra_emu_QuestOpenXr_getHeadPose(JNIEnv* env, jobject) {
     };
     jfloatArray result = env->NewFloatArray(8);
     if (result != nullptr) env->SetFloatArrayRegion(result, 0, 8, values);
+    return result;
+}
+
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_org_citra_citra_emu_QuestOpenXr_getControllerStates(JNIEnv* env, jobject) {
+    QuestControllerState states[2]{};
+    QuestOpenXR::GetControllerStates(states);
+    jfloat values[42]{};
+    for (int hand = 0; hand < 2; ++hand) {
+        const int offset = hand * 21;
+        std::memcpy(values + offset, states[hand].grip_position, 3 * sizeof(float));
+        std::memcpy(values + offset + 3, states[hand].grip_orientation, 4 * sizeof(float));
+        std::memcpy(values + offset + 7, states[hand].aim_position, 3 * sizeof(float));
+        std::memcpy(values + offset + 10, states[hand].aim_orientation, 4 * sizeof(float));
+        values[offset + 14] = static_cast<float>(states[hand].buttons);
+        values[offset + 15] = states[hand].trigger;
+        values[offset + 16] = states[hand].squeeze;
+        values[offset + 17] = states[hand].stick_x;
+        values[offset + 18] = states[hand].stick_y;
+        values[offset + 19] = states[hand].pose_valid ? 1.0f : 0.0f;
+        values[offset + 20] = 1.0f;
+    }
+    jfloatArray result = env->NewFloatArray(42);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 42, values);
     return result;
 }
