@@ -50,6 +50,7 @@ android {
     }
 
     buildFeatures {
+        prefab = true
         viewBinding = true
         buildConfig = true
     }
@@ -200,6 +201,8 @@ android {
 }
 
 dependencies {
+    // Khronos OpenXR Android loader. Meta Quest requires loader 1.0.34 or newer.
+    implementation("org.khronos.openxr:openxr_loader_for_android:1.1.65")
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.core:core-splashscreen:1.0.1")

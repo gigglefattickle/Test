@@ -22,6 +22,7 @@
         android:name="android.software.leanback"
         android:required="false"/>
 
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="true" android:version="1" />
     <uses-feature android:glEsVersion="0x00030002" android:required="true" />
     <uses-feature android:name="android.hardware.opengles.aep" android:required="true" />
 
@@ -70,6 +71,12 @@
             android:exported="true"
             android:theme="@style/Theme.Citra.Main"
             android:launchMode="singleTop">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
 
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

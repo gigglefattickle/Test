@@ -1,4 +1,5 @@
 name: citra-build
+# Quest 3 ARM64 validation run trigger
 
 on:
   push:

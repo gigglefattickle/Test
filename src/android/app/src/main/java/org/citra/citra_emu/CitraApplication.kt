@@ -56,6 +56,8 @@ class CitraApplication : Application() {
         }
 
         NativeLibrary.logDeviceInfo()
+        val openXrLoaderReady = QuestOpenXr.initialize(this)
+        Log.info("OpenXR Android loader initialized: $openXrLoaderReady")
         logDeviceInfo()
         createNotificationChannel()
         NativeLibrary.playTimeManagerInit()

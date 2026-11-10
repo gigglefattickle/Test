@@ -24,7 +24,7 @@ class EmuWindow_Android_OpenGL : public EmuWindow_Android {
 public:
     EmuWindow_Android_OpenGL(Core::System& system, ANativeWindow* surface, bool is_secondary,
                              EGLContext* sharedContext = NULL);
-    ~EmuWindow_Android_OpenGL() override = default;
+    ~EmuWindow_Android_OpenGL() override;
 
     void TryPresenting() override;
     bool WaitForFrame(std::chrono::milliseconds timeout) override;

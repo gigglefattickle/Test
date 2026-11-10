@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <mutex>
 #include "video_core/renderer_base.h"
 #include "video_core/renderer_opengl/frame_dumper_opengl.h"
 #include "video_core/renderer_opengl/gl_driver.h"
@@ -54,6 +55,9 @@ public:
     void PrepareVideoDumping() override;
     void CleanupVideoDumping() override;
 
+    // Returns the current native 3DS top-screen left/right eye textures.
+    bool GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width, u32& height);
+
 private:
     void InitOpenGLObjects();
     void ReloadShader(Settings::StereoRenderOption render_3d);
@@ -97,6 +101,8 @@ private:
 
     // Display information for top and bottom screens respectively
     std::array<ScreenInfo, 3> screen_infos;
+    mutable std::mutex quest_stereo_mutex;
+    bool quest_has_right_eye{};
 
     // Shader uniform location indices
     GLuint uniform_modelview_matrix;

@@ -16,8 +16,10 @@
 #include "core/core.h"
 #include "input_common/main.h"
 #include "jni/emu_window/emu_window_gl.h"
+#include "jni/quest_openxr.h"
 #include "video_core/gpu.h"
 #include "video_core/renderer_base.h"
+#include "video_core/renderer_opengl/renderer_opengl.h"
 
 static constexpr std::array<EGLint, 15> egl_attribs{EGL_SURFACE_TYPE,
                                                     EGL_WINDOW_BIT,
@@ -131,6 +133,14 @@ EmuWindow_Android_OpenGL::EmuWindow_Android_OpenGL(Core::System& system_, ANativ
     OnFramebufferSizeChanged();
 }
 
+EmuWindow_Android_OpenGL::~EmuWindow_Android_OpenGL() {
+    if (!is_secondary && egl_display != EGL_NO_DISPLAY && egl_surface != EGL_NO_SURFACE &&
+        egl_context != EGL_NO_CONTEXT) {
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+        QuestOpenXR::Shutdown();
+    }
+}
+
 EGLContext* EmuWindow_Android_OpenGL::GetEGLContext() {
     return &egl_context;
 }
@@ -241,8 +251,28 @@ void EmuWindow_Android_OpenGL::TryPresenting() {
     }
     eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
     surface_current = true;
+    if (!is_secondary) {
+        QuestOpenXR::EnsureSession(egl_display, egl_config, egl_context);
+        QuestHeadPose head_pose{};
+        QuestOpenXR::BeginFrameAndLocate(head_pose);
+    }
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     eglSwapInterval(egl_display, Settings::values.use_vsync ? 1 : 0);
     system.GPU().Renderer().TryPresent(0, is_secondary);
+    if (!is_secondary) {
+        GLuint left_eye_texture{};
+        GLuint right_eye_texture{};
+        u32 eye_width{};
+        u32 eye_height{};
+        auto* renderer = dynamic_cast<OpenGL::RendererOpenGL*>(&system.GPU().Renderer());
+        if (renderer && renderer->GetQuestStereoTextures(
+                            left_eye_texture, right_eye_texture, eye_width, eye_height)) {
+            QuestOpenXR::PresentStereoFrame(left_eye_texture, right_eye_texture,
+                                             eye_width, eye_height);
+        }
+    }
     eglSwapBuffers(egl_display, egl_surface);
+    if (!is_secondary) {
+        QuestOpenXR::EndFrame();
+    }
 }

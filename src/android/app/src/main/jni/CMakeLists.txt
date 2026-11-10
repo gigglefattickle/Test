@@ -26,6 +26,7 @@ add_library(citra-android SHARED
     multiplayer.cpp
     multiplayer.h
     native.cpp
+    quest_openxr.cpp
     ndk_motion.cpp
     ndk_motion.h
     performance_hint.cpp
@@ -33,6 +34,9 @@ add_library(citra-android SHARED
     system_save_game.cpp
     native_log.cpp
 )
+
+find_package(OpenXR REQUIRED CONFIG)
+target_link_libraries(citra-android PRIVATE OpenXR::openxr_loader)
 
 target_link_libraries(citra-android PRIVATE audio_core citra_common citra_core input_common network)
 target_link_libraries(citra-android PRIVATE android camera2ndk inih jnigraphics log mediandk yuv)

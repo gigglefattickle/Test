@@ -5,12 +5,14 @@
 package org.citra.citra_emu.fragments
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -34,13 +36,17 @@ import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
 import org.citra.citra_emu.adapters.GameAdapter
+import org.citra.citra_emu.activities.EmulationActivity
+import org.citra.citra_emu.contracts.OpenFileResultContract
 import org.citra.citra_emu.databinding.FragmentGamesBinding
 import org.citra.citra_emu.features.settings.model.BooleanSetting
 import org.citra.citra_emu.features.settings.model.CitraSettings
 import org.citra.citra_emu.features.settings.model.IntSetting
 import org.citra.citra_emu.features.updatechecker.UpdateChecker
 import org.citra.citra_emu.model.Game
+import org.citra.citra_emu.ui.main.MainActivity
 import org.citra.citra_emu.utils.BuildUtil
+import org.citra.citra_emu.utils.FileBrowserHelper
 import org.citra.citra_emu.viewmodel.CompressProgressDialogViewModel
 import org.citra.citra_emu.viewmodel.GamesViewModel
 import org.citra.citra_emu.viewmodel.HomeViewModel
@@ -57,6 +63,33 @@ class GamesFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         gameAdapter.handleShortcutImageResult(uri)
+    }
+
+    private val openNewLeafRomLauncher = registerForActivityResult(
+        OpenFileResultContract()
+    ) { result: Intent? ->
+        if (result == null) return@registerForActivityResult
+        val selectedFiles = FileBrowserHelper.getSelectedFiles(
+            result,
+            requireContext(),
+            listOf("3ds", "cci", "cxi", "3dsx")
+        )
+        val selectedFile = selectedFiles?.firstOrNull()
+        if (selectedFile == null) {
+            Toast.makeText(
+                requireContext(),
+                "Choose a supported .3ds, .cci, .cxi, or .3dsx game file.",
+                Toast.LENGTH_LONG
+            ).show()
+            return@registerForActivityResult
+        }
+        startActivity(
+            Intent(requireContext(), EmulationActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(selectedFile)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        )
     }
 
     private var shouldCompress: Boolean = true
@@ -156,6 +189,23 @@ class GamesFragment : Fragment() {
                 this.shouldCompress = shouldCompress
             }
         )
+
+        binding.newLeafImport.setOnClickListener {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Animal Crossing: New Leaf")
+                .setItems(
+                    arrayOf(
+                        "Open a .3ds / .cci / .cxi / .3dsx game",
+                        "Install a .cia / .zcia title"
+                    )
+                ) { _, which ->
+                    when (which) {
+                        0 -> openNewLeafRomLauncher.launch(false)
+                        1 -> (requireActivity() as MainActivity).ciaFileInstaller.launch(false)
+                    }
+                }
+                .show()
+        }
 
         binding.gridGames.apply {
             layoutManager = GridLayoutManager(
