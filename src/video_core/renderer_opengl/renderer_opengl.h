@@ -56,7 +56,7 @@ public:
     void CleanupVideoDumping() override;
 
     // Returns the current native 3DS top-screen left/right eye textures.
-    bool GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width, u32& height) const;
+    bool GetQuestStereoTextures(GLuint& left, GLuint& right, u32& width, u32& height);
 
 private:
     void InitOpenGLObjects();
