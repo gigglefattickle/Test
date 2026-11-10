@@ -486,11 +486,11 @@ void DestroySessionLocked() {
         c.aim_space = XR_NULL_HANDLE;
         c.state = {};
     }
-    if (g_action_set != XR_NULL_HANDLE) xrDestroyActionSet(g_action_set);
-    g_action_set = XR_NULL_HANDLE;
     if (g_view_space != XR_NULL_HANDLE) xrDestroySpace(g_view_space);
     if (g_local_space != XR_NULL_HANDLE) xrDestroySpace(g_local_space);
     if (g_session != XR_NULL_HANDLE) xrDestroySession(g_session);
+    if (g_action_set != XR_NULL_HANDLE) xrDestroyActionSet(g_action_set);
+    g_action_set = XR_NULL_HANDLE;
     if (g_instance != XR_NULL_HANDLE) xrDestroyInstance(g_instance);
     g_view_space = XR_NULL_HANDLE;
     g_local_space = XR_NULL_HANDLE;
