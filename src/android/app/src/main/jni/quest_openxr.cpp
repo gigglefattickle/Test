@@ -98,8 +98,10 @@ bool CreateControllerActionsLocked() {
             info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
             info.countSubactionPaths = 1;
             info.subactionPaths = &c.hand_path;
-            std::strncpy(info.actionName, button_names[i], XR_MAX_ACTION_NAME_SIZE - 1);
-            std::strncpy(info.localizedActionName, button_names[i],
+            const std::string action_name =
+                std::string(hand == 0 ? "left_" : "right_") + button_names[i];
+            std::strncpy(info.actionName, action_name.c_str(), XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, action_name.c_str(),
                          XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
             if (XR_FAILED(xrCreateAction(g_action_set, &info, &c.buttons[i]))) return false;
         }
@@ -111,9 +113,10 @@ bool CreateControllerActionsLocked() {
             info.actionType = analog_types[i];
             info.countSubactionPaths = 1;
             info.subactionPaths = &c.hand_path;
-            std::strncpy(info.actionName, i == 0 ? "trigger_value" :
-                         i == 1 ? "squeeze_value" : "thumbstick", XR_MAX_ACTION_NAME_SIZE - 1);
-            std::strncpy(info.localizedActionName, analog_paths[i],
+            const std::string action_name = std::string(hand == 0 ? "left_" : "right_") +
+                (i == 0 ? "trigger_value" : i == 1 ? "squeeze_value" : "thumbstick");
+            std::strncpy(info.actionName, action_name.c_str(), XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, action_name.c_str(),
                          XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
             if (XR_FAILED(xrCreateAction(g_action_set, &info, analog_actions[i]))) return false;
         }
@@ -123,9 +126,10 @@ bool CreateControllerActionsLocked() {
             info.actionType = XR_ACTION_TYPE_POSE_INPUT;
             info.countSubactionPaths = 1;
             info.subactionPaths = &c.hand_path;
-            std::strncpy(info.actionName, i == 0 ? "grip_pose" : "aim_pose",
-                         XR_MAX_ACTION_NAME_SIZE - 1);
-            std::strncpy(info.localizedActionName, pose_paths[i],
+            const std::string action_name = std::string(hand == 0 ? "left_" : "right_") +
+                (i == 0 ? "grip_pose" : "aim_pose");
+            std::strncpy(info.actionName, action_name.c_str(), XR_MAX_ACTION_NAME_SIZE - 1);
+            std::strncpy(info.localizedActionName, action_name.c_str(),
                          XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
             if (XR_FAILED(xrCreateAction(g_action_set, &info, pose_actions[i]))) return false;
         }
@@ -297,7 +301,7 @@ PanelRect ComputeWorldPanelRect(const XrPosef& eye_pose, const XrFovf& fov) {
     const float tan_right = std::tan(fov.angleRight);
     const float tan_down = std::tan(fov.angleDown);
     const float tan_up = std::tan(fov.angleUp);
-    float min_x = static_cast<float>(g_swapchain_width);
+    if (std::abs(tan_right - tan_left) < 0.0001f ||\n        std::abs(tan_up - tan_down) < 0.0001f) return {};\n    float min_x = static_cast<float>(g_swapchain_width);
     float min_y = static_cast<float>(g_swapchain_height);
     float max_x = 0.0f;
     float max_y = 0.0f;
@@ -373,6 +377,7 @@ void DrawQuestLaserPointers(const PanelRect& panel, uint32_t eye) {
             const float right = std::tan(eye_view.fov.angleRight);
             const float down = std::tan(eye_view.fov.angleDown);
             const float up = std::tan(eye_view.fov.angleUp);
+            if (std::abs(right - left) < 0.0001f || std::abs(up - down) < 0.0001f) return false;
             px = static_cast<int>(((local.x / -local.z - left) / (right - left)) *
                                   static_cast<float>(g_swapchain_width));
             py = static_cast<int>(((local.y / -local.z - down) / (up - down)) *
