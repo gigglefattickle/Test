@@ -131,6 +131,10 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     private fun releaseQuestControllerInput() {
+        if (!NativeLibrary.isRunning()) {
+            questPressedButtons.forEach { it.clear() }
+            return
+        }
         for (hand in 0..1) {
             val descriptor = if (hand == 0) "quest-left-controller" else "quest-right-controller"
             questPressedButtons[hand].forEach {
