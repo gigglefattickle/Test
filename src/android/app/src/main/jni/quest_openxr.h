@@ -13,7 +13,7 @@ struct QuestHeadPose {
 namespace QuestOpenXR {
 bool EnsureSession(EGLDisplay display, EGLConfig config, EGLContext context);
 bool BeginFrameAndLocate(QuestHeadPose& pose);
-void PresentFrame(EGLint source_width, EGLint source_height);
+void PresentStereoFrame(GLuint left_texture, GLuint right_texture, uint32_t source_width, uint32_t source_height);
 void GetHeadPose(QuestHeadPose& pose);
 void EndFrame();
 void Shutdown();
