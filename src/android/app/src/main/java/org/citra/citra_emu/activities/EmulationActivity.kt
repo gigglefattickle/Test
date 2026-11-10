@@ -29,6 +29,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.QuestOpenXr
 import org.citra.citra_emu.R
 import org.citra.citra_emu.camera.StillImageCameraHelper.onFilePickerResult
 import org.citra.citra_emu.contracts.OpenFileResultContract
@@ -272,6 +273,8 @@ class EmulationActivity : AppCompatActivity() {
     // rotations. Here we set full screen immersive repeatedly in onResume and in
     // onWindowFocusChanged to prevent the unwanted status bar state.
     override fun onResume() {
+        QuestOpenXr.setActivity(this)
+        QuestOpenXr.setResumed(true)
         enableFullscreenImmersive()
         if (isEmulationReady) {
             // If emulation is ready then unblock rotation
@@ -292,6 +295,7 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        QuestOpenXr.setResumed(false)
         gamepadEventHandler.reset()
         super.onPause()
     }
