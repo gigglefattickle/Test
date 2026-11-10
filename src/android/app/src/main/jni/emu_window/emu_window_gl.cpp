@@ -132,6 +132,14 @@ EmuWindow_Android_OpenGL::EmuWindow_Android_OpenGL(Core::System& system_, ANativ
     OnFramebufferSizeChanged();
 }
 
+EmuWindow_Android_OpenGL::~EmuWindow_Android_OpenGL() {
+    if (!is_secondary && egl_display != EGL_NO_DISPLAY && egl_surface != EGL_NO_SURFACE &&
+        egl_context != EGL_NO_CONTEXT) {
+        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
+        QuestOpenXR::Shutdown();
+    }
+}
+
 EGLContext* EmuWindow_Android_OpenGL::GetEGLContext() {
     return &egl_context;
 }
@@ -170,9 +178,7 @@ void EmuWindow_Android_OpenGL::DestroyContext() {
     if (!egl_context) {
         return;
     }
-    if (egl_context != EGL_NO_CONTEXT && egl_display != EGL_NO_DISPLAY) {
-        eglMakeCurrent(egl_display, egl_surface, egl_surface, egl_context);
-        QuestOpenXR::Shutdown();
+    if (eglGetCurrentContext() == egl_context) {
         eglMakeCurrent(egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     }
     if (!eglDestroyContext(egl_display, egl_context)) {
